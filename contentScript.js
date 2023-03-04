@@ -1,5 +1,5 @@
 (() => {
-  let youtubeLeftControls, youtubePlayer, youtubePlayerContainer;
+  let youtubePlayer, youtubePlayerContainer;
   let currentVideo = '';
   let prevVideoTime = '';
   let prevVideo = '';
@@ -8,28 +8,52 @@
   const fetchVideoTimeStamp = () => {
     return new Promise((resolve) => {
       chrome.storage.local.get([currentVideo], (obj) => {
-        resolve(obj[currentVideo] ? obj[currentVideo] : '');
+        resolve(obj[currentVideo] ? obj[currentVideo].timestamp : '');
       });
     });
   };
-
-  const saveVideoTimeStamp = () => {
-    chrome.storage.local.set({
-      [prevVideo]: prevVideoTime
-    });
+  //get all keys from chrome storage
+  const checkStorageFilled = async () => {
+    const pr = new Promise((resolve) =>
+      chrome.storage.local.get(null, function (items) {
+        resolve(items);
+      })
+    );
+    const storedData = await pr;
+    let arrData = [];
+    if (Object.keys(storedData).length > 100) {
+      Object.keys(storedData).forEach((key) => {
+        arrData.push({
+          id: key,
+          savedTime: JSON.parse(storedData?.[key]?.savedTime)
+        });
+      });
+      arrData.sort((a, b) => new Date(a.savedTime) - new Date(b.savedTime));
+      chrome.storage.local.remove(arrData[0].id);
+    }
   };
-  // window.onhashchange = () => {
-  //   console.log('gg', 'onhashchange');
-  //   saveVideoTimeStamp();
-  // };
-  window.addEventListener('popstate', () => {
-    console.log('gg', 'popstate');
-    saveVideoTimeStamp();
+
+  const saveVideoTimeStamp = async () => {
+    let pr = new Promise((resolve) => {
+      chrome.storage.local.set({
+        [prevVideo]: {
+          timestamp: prevVideoTime,
+          savedTime: JSON.stringify(new Date())
+        }
+      });
+      resolve('success');
+    });
+    await pr;
+    checkStorageFilled();
+  };
+  //tab gets removed
+  window.addEventListener('popstate', async () => {
+    await saveVideoTimeStamp();
   });
   const removeContinuewWatchingBtn = () => {
     const continueWatchingBtnExists = document.getElementsByClassName(
       'continue-watching-btn'
-    )[0];
+    )?.[0];
     youtubePlayerContainer =
       document.getElementsByClassName('ytp-chrome-top')[0];
     if (continueWatchingBtnExists) {
@@ -41,33 +65,24 @@
     youtubePlayer.currentTime = timeStamp;
     removeContinuewWatchingBtn();
   };
-  window.addEventListener('DOMContentLoaded', () => {
-    console.log('gg', 'DOMContentLoaded');
-  });
-  // window.addEventListener('focusout', () => {
-  //   console.log('gg', 'focusout');
-  //   saveVideoTimeStamp();
-  // });
-
-  window.addEventListener('beforeunload', () => {
+  //tab gets unloaded
+  window.addEventListener('beforeunload', async () => {
     removeContinuewWatchingBtn();
-    saveVideoTimeStamp();
+    await saveVideoTimeStamp();
   });
 
   window.setInterval(() => {
     prevVideoTime = youtubePlayer?.currentTime;
     prevVideo = currentVideo;
-  }, 500);
+  }, 1000);
 
   window.setInterval(() => {
     removeContinuewWatchingBtn();
   }, 8000);
 
-  const newVideoLoaded = async (type) => {
+  const newVideoLoaded = async () => {
     youtubePlayer = document.getElementsByClassName('video-stream')[0];
-    //console.log('gg', type, prevVideoTime, prevVideo, currentVideo);
     const timeStamp = await fetchVideoTimeStamp();
-    console.log('gg', timeStamp);
     const continueWatchingBtnExists = document.getElementsByClassName(
       'continue-watching-btn'
     )[0];
@@ -98,8 +113,7 @@
         continueWatchingHandler(timeStamp)
       );
     }
-
-    saveVideoTimeStamp();
+    await saveVideoTimeStamp();
   };
 
   chrome.runtime.onMessage.addListener((obj, sender, response) => {
